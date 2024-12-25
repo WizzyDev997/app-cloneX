@@ -7,11 +7,11 @@ const useVapi = (initialAssistantId: string = "") => {
   const [volumeLevel, setVolumeLevel] = useState(0);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [assistantId, setAssistantId] = useState(initialAssistantId);
   const [conversation, setConversation] = useState<
     { role: string; text: string; timestamp: string; isFinal: boolean }[]
   >([]);
   const vapiRef = useRef<any>(null);
+  const [assistantId, setAssistantId] = useState(initialAssistantId);
 
   const initializeVapi = useCallback(() => {
     if (!vapiRef.current) {
@@ -37,6 +37,7 @@ const useVapi = (initialAssistantId: string = "") => {
             const timestamp = new Date().toLocaleTimeString();
             const updatedConversation = [...prev];
             if (message.transcriptType === "final") {
+              // Find the partial message to replace it with the final one
               const partialIndex = updatedConversation.findIndex(
                 (msg) => msg.role === message.role && !msg.isFinal,
               );
@@ -56,6 +57,7 @@ const useVapi = (initialAssistantId: string = "") => {
                 });
               }
             } else {
+              // Add partial message or update the existing one
               const partialIndex = updatedConversation.findIndex(
                 (msg) => msg.role === message.role && !msg.isFinal,
               );
@@ -76,6 +78,19 @@ const useVapi = (initialAssistantId: string = "") => {
             return updatedConversation;
           });
         }
+
+        if (
+          message.type === "function-call" &&
+          message.functionCall.name === "changeUrl"
+        ) {
+          const command = message.functionCall.parameters.url.toLowerCase();
+          console.log(command);
+          if (command) {
+            window.location.href = command;
+          } else {
+            console.error("Unknown route:", command);
+          }
+        }
       });
 
       vapiInstance.on("error", (e: Error) => {
@@ -87,6 +102,7 @@ const useVapi = (initialAssistantId: string = "") => {
   useEffect(() => {
     initializeVapi();
 
+    // Cleanup function to end call and dispose Vapi instance
     return () => {
       if (vapiRef.current) {
         vapiRef.current.stop();
@@ -130,12 +146,9 @@ const useVapi = (initialAssistantId: string = "") => {
     }
   };
 
-  const setActiveAssistant = useCallback((id: string) => {
+  const setActiveAssistant = (id: string) => {
     setAssistantId(id);
-    if (isSessionActive && vapiRef.current) {
-      vapiRef.current.stop();
-    }
-  }, [isSessionActive]);
+  };
 
   return {
     volumeLevel,
@@ -151,3 +164,4 @@ const useVapi = (initialAssistantId: string = "") => {
 };
 
 export default useVapi;
+
