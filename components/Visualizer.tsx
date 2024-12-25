@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useVapi from '@/hooks/use-vapi';
@@ -13,7 +15,9 @@ const Visualizer: React.FC<VisualizerProps> = ({ assistantId }) => {
   const [bars, setBars] = useState(Array(50).fill(5));
 
   useEffect(() => {
-    setActiveAssistant(assistantId);
+    if (assistantId) {
+      setActiveAssistant(assistantId);
+    }
   }, [assistantId, setActiveAssistant]);
 
   const updateBars = useCallback((volume: number) => {
