@@ -7,10 +7,12 @@ import { CreateAssistantForm } from "./CreateAssistantForm"
 import Visualizer from "./Visualizer"
 import useVapi from "@/hooks/use-vapi"
 import { AssistantSelector } from "./AssistantSelector"
+import { WalletConnector } from "./WalletConnector"
 
 declare global {
   interface Window {
     ethereum?: ethers.Eip1193Provider
+    trustwallet?: ethers.Eip1193Provider
   }
 }
 
@@ -42,9 +44,9 @@ export default function Web3VoiceAIInterface() {
   }, [isConnected, userAddress])
 
   async function checkConnection() {
-    if (typeof window.ethereum !== 'undefined') {
+    const provider = await getProvider()
+    if (provider) {
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum)
         const accounts = await provider.listAccounts()
         if (accounts.length > 0) {
           setIsConnected(true)
@@ -57,22 +59,36 @@ export default function Web3VoiceAIInterface() {
     }
   }
 
-  async function connectWallet() {
+  async function getProvider() {
     if (typeof window.ethereum !== 'undefined') {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const accounts = await provider.send("eth_requestAccounts", [])
-        const signer = await provider.getSigner()
-        const address = await signer.getAddress()
-        setIsConnected(true)
-        setUserAddress(address)
-        setError('')
-      } catch (err) {
-        console.error(err)
-        setError('Failed to connect wallet')
-      }
+      return new ethers.BrowserProvider(window.ethereum)
+    } else if (typeof window.trustwallet !== 'undefined') {
+      return new ethers.BrowserProvider(window.trustwallet)
+    }
+    return null
+  }
+
+  async function connectWallet(providerType: 'metamask' | 'trustwallet') {
+    let provider
+    if (providerType === 'metamask' && typeof window.ethereum !== 'undefined') {
+      provider = new ethers.BrowserProvider(window.ethereum)
+    } else if (providerType === 'trustwallet' && typeof window.trustwallet !== 'undefined') {
+      provider = new ethers.BrowserProvider(window.trustwallet)
     } else {
-      setError('Please install MetaMask or Trust Wallet')
+      setError(`${providerType === 'metamask' ? 'MetaMask' : 'Trust Wallet'} is not installed`)
+      return
+    }
+
+    try {
+      const accounts = await provider.send("eth_requestAccounts", [])
+      const signer = await provider.getSigner()
+      const address = await signer.getAddress()
+      setIsConnected(true)
+      setUserAddress(address)
+      setError('')
+    } catch (err) {
+      console.error(err)
+      setError('Failed to connect wallet')
     }
   }
 
@@ -179,7 +195,7 @@ export default function Web3VoiceAIInterface() {
             <Button onClick={disconnectWallet} className="mt-4">Disconnect Wallet</Button>
           </div>
         ) : (
-          <Button onClick={connectWallet}>Connect Wallet</Button>
+          <WalletConnector onConnect={connectWallet} />
         )}
       </div>
     </div>
