@@ -1,20 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { ethers } from 'ethers'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from "./ui/button"
 import { CreateAssistantForm } from "./CreateAssistantForm"
 import Visualizer from "./Visualizer"
 import useVapi from "@/hooks/use-vapi"
 import { AssistantSelector } from "./AssistantSelector"
 import { WalletConnector } from "./WalletConnector"
-
-declare global {
-  interface Window {
-    ethereum?: ethers.Eip1193Provider
-    trustwallet?: ethers.Eip1193Provider
-  }
-}
+import { useAccount, useConnect, useDisconnect } from 'wagmi'
 
 interface Assistant {
   id: string;
@@ -22,85 +15,51 @@ interface Assistant {
 }
 
 export default function Web3VoiceAIInterface() {
-  const [isConnected, setIsConnected] = useState(false)
-  const [userAddress, setUserAddress] = useState('')
-  const [error, setError] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [assistants, setAssistants] = useState<Assistant[]>([])
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null)
   const { conversation, isSessionActive, toggleCall } = useVapi()
+  const { address, isConnected } = useAccount()
+  const { connectAsync, connectors } = useConnect()
+  const { disconnectAsync } = useDisconnect()
 
   useEffect(() => {
-    checkConnection()
-  }, [])
-
-  useEffect(() => {
-    if (isConnected && userAddress) {
-      const storedAssistants = localStorage.getItem(`assistants_${userAddress}`)
+    if (isConnected && address) {
+      const storedAssistants = localStorage.getItem(`assistants_${address}`)
       if (storedAssistants) {
         setAssistants(JSON.parse(storedAssistants))
       }
     }
-  }, [isConnected, userAddress])
+  }, [isConnected, address])
 
-  async function checkConnection() {
-    const provider = await getProvider()
-    if (provider) {
-      try {
-        const accounts = await provider.listAccounts()
-        if (accounts.length > 0) {
-          setIsConnected(true)
-          setUserAddress(accounts[0].address)
-        }
-      } catch (err) {
-        console.error(err)
-        setError('Failed to check wallet connection')
-      }
-    }
-  }
-
-  async function getProvider() {
-    if (typeof window.ethereum !== 'undefined') {
-      return new ethers.BrowserProvider(window.ethereum)
-    } else if (typeof window.trustwallet !== 'undefined') {
-      return new ethers.BrowserProvider(window.trustwallet)
-    }
-    return null
-  }
-
-  async function connectWallet(providerType: 'metamask' | 'trustwallet') {
-    let provider
-    if (providerType === 'metamask' && typeof window.ethereum !== 'undefined') {
-      provider = new ethers.BrowserProvider(window.ethereum)
-    } else if (providerType === 'trustwallet' && typeof window.trustwallet !== 'undefined') {
-      provider = new ethers.BrowserProvider(window.trustwallet)
-    } else {
-      setError(`${providerType === 'metamask' ? 'MetaMask' : 'Trust Wallet'} is not installed`)
-      return
-    }
-
+  const connectWallet = useCallback(async (connectorId: 'injected' | 'walletConnect') => {
     try {
-      const accounts = await provider.send("eth_requestAccounts", [])
-      const signer = await provider.getSigner()
-      const address = await signer.getAddress()
-      setIsConnected(true)
-      setUserAddress(address)
-      setError('')
-    } catch (err) {
-      console.error(err)
-      setError('Failed to connect wallet')
+      const connector = connectors.find(c => 
+        (connectorId === 'injected' && c.id === 'metaMask') || 
+        (connectorId === 'walletConnect' && c.id === 'walletConnect')
+      )
+      if (connector) {
+        await connectAsync({ connector })
+      } else {
+        console.error('Connector not found')
+      }
+    } catch (error) {
+      console.error('Failed to connect:', error)
     }
-  }
+  }, [connectors, connectAsync])
 
-  function disconnectWallet() {
-    setIsConnected(false)
-    setUserAddress('')
-    setShowCreateForm(false)
-    setSelectedAssistant(null)
-    setAssistants([])
-  }
+  const disconnectWallet = useCallback(async () => {
+    try {
+      await disconnectAsync()
+      setShowCreateForm(false)
+      setSelectedAssistant(null)
+      setAssistants([])
+    } catch (error) {
+      console.error('Failed to disconnect:', error)
+    }
+  }, [disconnectAsync])
 
-  async function createAssistant(data: { name: string; systemPrompt: string; firstMessage: string }) {
+  const createAssistant = useCallback(async (data: { name: string; systemPrompt: string; firstMessage: string }) => {
     try {
       const response = await fetch("https://api.vapi.ai/assistant", {
         method: "POST",
@@ -139,31 +98,34 @@ export default function Web3VoiceAIInterface() {
       console.log(body);
       
       const newAssistant = { id: body.id, name: data.name };
-      const updatedAssistants = [...assistants, newAssistant];
-      setAssistants(updatedAssistants);
-      localStorage.setItem(`assistants_${userAddress}`, JSON.stringify(updatedAssistants));
+      setAssistants(prev => {
+        const updatedAssistants = [...prev, newAssistant];
+        if (address) {
+          localStorage.setItem(`assistants_${address}`, JSON.stringify(updatedAssistants));
+        }
+        return updatedAssistants;
+      });
       
       setShowCreateForm(false)
       setSelectedAssistant(newAssistant)
     } catch (err) {
       console.error(err)
-      setError('Failed to create assistant')
+      // Handle error (e.g., show error message to user)
     }
-  }
+  }, [address])
 
-  function handleSelectAssistant(assistant: Assistant) {
+  const handleSelectAssistant = useCallback((assistant: Assistant) => {
     setSelectedAssistant(assistant)
-  }
+  }, [])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
       <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md">
-        <h1 className="mb-6 text-3xl font-bold text-center">Web3 x Voice AI</h1>
-        {error && <p className="mb-4 text-red-500">{error}</p>}
+        <h1 className="mb-6 text-3xl font-bold text-center">CloneX App</h1>
         {isConnected ? (
           <div className="text-center">
             <p className="mb-4 text-xl font-semibold">Welcome! 😊</p>
-            <p className="mb-4 text-sm text-gray-600">Connected Address: {userAddress}</p>
+            <p className="mb-4 text-sm text-gray-600">Connected Address: {address}</p>
             {selectedAssistant ? (
               <div>
                 <h2 className="text-xl font-semibold mb-4">Talking to: {selectedAssistant.name}</h2>
